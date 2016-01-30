@@ -1,0 +1,122 @@
+<apex:page >
+    <script type="text/javascript">    
+        var app = angular.module("Controllers", []);
+        
+        // 共通変数
+        app.factory('Wrapper', function() {
+            return {
+                Account : {
+                    Name : ''
+                },
+                Attachments : []
+            };
+        });
+    
+        // InputController
+        app.controller("InputController", ["$scope", "$q" , 'Wrapper', function($scope, $q, Wrapper) {
+
+            $scope.Wrapper = Wrapper;
+            $scope.errorMessages = [];
+            
+            $scope.doSave = function(event) {
+                event.preventDefault();
+
+                // ファイル情報の取得
+                var uploadFile = document.getElementById('attamentFile');
+
+                // ファイル件数 0件判定
+                console.log(uploadFile.files.length);
+                if (!!uploadFile.files.length == 0) {
+                    $scope.errorMessages = 'ファイルを選択してください。';
+                    return false;
+                } else if (uploadFile.files.length > 5) {
+                    $scope.errorMessages = '添付できるファイルは5つまでです。';
+                    return false;
+                }
+
+                // ファイル
+                Wrapper.Attachments = [];
+
+                // 非同期処理の準備
+                var promises = [];
+                for (var i = 0; i < uploadFile.files.length; i++) {
+                    promises.push(getFileInfo(Wrapper, uploadFile.files[i]));
+                }
+
+                // ファイル情報の取得処理を実行。完了後に取引先を登録。
+                $q.all(promises).then(
+                    function() {
+                        console.log(arguments);
+                        console.log(Wrapper.Attachments);
+
+                        var aList = [];
+                        for (var i = 0; i < $scope.Wrapper.Attachments.length; i++) {
+                            var a = $scope.Wrapper.Attachments[i];
+                            delete a.$$hashKey;
+                            aList.push(a);
+                        }
+
+                        console.log(aList);
+
+                        var wrapperObj = {
+                            account : $scope.Wrapper.Account,
+                            attachments : aList
+                        };
+                        doSaveByApex(wrapperObj);
+                    }
+                )
+            };
+
+            // 保存ボタンの処理
+            function doSaveByApex(wrapperObj) {
+                $scope.errorMessages = [];
+                // RemoteAction
+                MultipleFileUploadController.doSaveAccount(wrapperObj, function(result, event){
+                    if(event.status) {
+                        if (result.errorMessages.length > 0) {
+                            // エラーメッセージを表示
+                            $scope.errorMessages = result.errorMessages;
+                        } else {
+                            swal('SUCCESS', '取引先を登録しました。', 'success');
+                            location.href="/" + result.recordId;
+                        }
+                    } else {
+                        alert(event.message);
+                    }
+                    $scope.$apply();
+                    return false;
+                });
+            }
+
+            /**
+             * ファイル情報取得
+             */
+            function getFileInfo(Wrapper, file) {
+                var deferred = $q.defer();
+                // ファイルの存在チェック
+                if (!file) {
+                    deferred.reject('ファイルを選択してください。');
+                }
+
+                // ファイルの読み込み
+                var reader = new FileReader();
+                reader.onloadend = function() {
+                    // DataURL
+                    var dataURL = reader.result;
+                    
+                    // Attachment情報
+                    Attacment = {
+                        fileName : file.name,
+                        fileSize : file.size,
+                        uploadFile : dataURL.match(/,(.*)$/)[1]
+                    }
+                    Wrapper.Attachments.push(Attacment);
+                    // 処理終了
+                    deferred.resolve();
+                };
+                reader.readAsDataURL(file);
+                return deferred.promise; 
+            }
+        }]);
+    </script>
+</apex:page>
